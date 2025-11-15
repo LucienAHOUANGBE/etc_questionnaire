@@ -1,18 +1,12 @@
-"""
-@auteur: Vignawou Lucien AHOUANGBE
-@affiliation: Excellent Treaning Center (ETC)
-@date: Saturday 15 Nov 2025 19:49
-"""
-
 import streamlit as st
 from google.oauth2.service_account import Credentials
 import gspread
 from datetime import datetime
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.errors import HttpError
+import io
 import dropbox
-import smtplib
-from email.message import EmailMessage
-import re
-
 
 
 
@@ -27,85 +21,44 @@ st.set_page_config(
 )
 
 
-
-CONFIG = {
-    'python1': 30,
-    'RMaxPlace': 30,
-    "spreadSheetID": st.secrets.get("SPREADSHEET_ID"),
-    "driveFolderID": st.secrets.get("DRIVE_FOLDER_ID")
-}
-
-listOfLogicielInit = {
-   'python1' :  'Python 1',
-   'r1' :  'R 1',
-}
-
-logicielDefinition = {
-    "python1": "Python 1 : Introduction à python",
-    "r1": "R 1 : Introduction à R + Analyse de données"
-}
-
-MaxPlace = {f: 30 for f in listOfLogicielInit.keys()}
-
-smtp_user = st.secrets.Mails['SMTP_USER']
-smtp_pass = st.secrets.Mails['SMTP_PASS']
-
 # Mise à jours tu CSS
-
 
 st.markdown("""
 <style>
-
-    /* ---------- BACKGROUND ---------- */
-
     .main {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     .stApp {
         background: transparent;
-    }
-
-
-    /* ---------- HEADER ---------- */
-
+    }   
+            
     .header-title {
         text-align: center;
         font-size: 3em;
         margin-bottom: 0.5rem;
-        color: black;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.35);
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
-
-
-    /* ---------- FORMULAIRE ---------- */
-
+            
     div[data-testid="stForm"] {
         background: white;
         padding: 2rem;
         border-radius: 20px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-        backdrop-filter: blur(6px);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
-
+            
     p {
-        color: #2d2d2d;
+        color: black;
     }
-
-
-    /* ---------- CARDS ---------- */
-
+            
     .quota-card {
         background: white;
         padding: 1.5rem;
         border-radius: 15px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.10);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         text-align: center;
         margin: 1rem 0;
     }
-
-
-    /* ---------- TITRES DE SECTION ---------- */
-
+            
     .section-title {
         color: #667eea;
         font-size: 1.5em;
@@ -113,24 +66,16 @@ st.markdown("""
         margin-bottom: 1rem;
         border-bottom: 3px solid #667eea;
         padding-bottom: 0.5rem;
-        font-weight: 600;
     }
 
-
-    /* ---------- WARNING BOX ---------- */
-
     .warning-box {
-        background: #fff8e1;
+        background: #fff3cd;
         border-left: 5px solid #ffc107;
         padding: 1rem;
         border-radius: 8px;
         color: #856404;
         margin-bottom: 1rem;
-        box-shadow: 0 3px 8px rgba(0,0,0,0.1);
     }
-
-
-    /* ---------- ERROR BOX ---------- */
 
     .error-box {
         background: #f8d7da;
@@ -138,51 +83,31 @@ st.markdown("""
         padding: 1.5rem;
         border-radius: 10px;
         color: #721c24;
-        box-shadow: 0 3px 8px rgba(0,0,0,0.15);
     }
-
-
-    /* ---------- SUCCESS BOX (ETC DESIGN) ---------- */
-
     .success-box {
-        background: #f4eaff;
-        border-left: 5px solid #6f42c1;
+        background: ##bcf5c1;
+        border-left: 5px solid #dc3545;
         padding: 1.5rem;
         border-radius: 10px;
-        color: #3c1c6f;
-        box-shadow: 0 4px 12px rgba(111, 66, 193, 0.18);
-    }
-            
-    /* Tous les éléments <img> de l'application */
-    img {
-        width: 100% !important;     /* Toujours responsive */
-        height: auto !important;    /* Ratio conservé */
-        border-radius: 12px !important;
-        object-fit: contain !important;
-    }
-
-    /* Conteneur parent des images dans Streamlit */
-    [data-testid="stImage"] {
-        display: flex;
-        justify-content: center;    /* image centrée */
-        align-items: center;
-    }
-
-    /* Sur mobile : élargir encore plus */
-    @media (max-width: 600px) {
-        img {
-            width: 98% !important;
-        }
-    }
-
+        color: #0ff523;
+    }      
 </style>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True
+)
 
+
+CONFIG = {
+    'PythonMaxPlace': 30,
+    'RMaxPlace': 30,
+    "spreadSheetID": st.secrets.get("SPREADSHEET_ID"),
+    "driveFolderID": st.secrets.get("DRIVE_FOLDER_ID")
+}
 
 
 # Les connexions serveur ---------------------------------------------------
 # Google sheets
 
+print(st.secrets["gcp_service_account"]["project_id"])
 
 st.cache_resource()
 def connect_to_server():
@@ -254,45 +179,168 @@ def send_to_sheet(data, shtname):
         raise Exception(f"Erreur sauvegarde Sheets: {e}")
 
 
-def send_to_dropbox(entry_file, dest_files_name, dest_folder="/Formation/Vague1"):
+def send_to_dropbox(entry_file, dest_files_name, dest_folder="/ETCquestionnaire"):
     _, _, dbx= connect_to_server()
     file_bytes = entry_file.read()
     dest_path = f"{dest_folder}/{dest_files_name}"
     dbx.files_upload(file_bytes, dest_path)
     
     
+# def send_to_drive(file_bytes, name_on_server):
+#     try:
+#         _, _, gdrv = connect_to_server()
+#         if gdrv is None:
+#             raise Exception("Impossible de récupérer le fichier Google drive.")
+            
+#         try:
+#             # Si la drive existe
+#             # creer le nom de fichier et le dossier sur serveur drive
+#             file_metadata = {
+#                 'name': name_on_server,
+#                 'parents': [CONFIG["driveFolderID"]]
+#             }
 
-# ontenir le nombre actuel
+#             # information du media en local
+#             media_a_charger = MediaIoBaseUpload(
+#                 io.BytesIO(file_bytes),
+#                 mimetype="application/pdf"
+#             )
 
-# calculer le cota actuelle
+#             # chargement du fichier vers drive
+#             file = gdrv.files().create(
+#                 body = file_metadata,
+#                 media_body = media_a_charger, 
+#                 fields = "id, name",
+#                 supportsAllDrives=True
+#             ).execute()
 
+#             return file
 
-
-
-def get_total_enrolled(formation):
-    _, gsht, _ = connect_to_server()
-
-    nb = 0
-    if gsht is None:
-        raise Exception("Impossible de récupérer le fichier Google Sheets.")
-    try:
-        # Si la feuille existe
-        wsht = gsht.worksheet(listOfLogicielInit.get(formation))
-        nb = len(wsht.get_all_values()) - 1
-    except:
-        pass
-    return nb
+#         except Exception as e:
+#             raise Exception(f"Erreur sauvegarde vers Drive: {e}")
+            
+#     except Exception as e:     
+#         raise Exception(f"Erreur connexion à Drive: {e}")
     
-# ActualEnrolledNumber = {f: get_total_enrole(f) for f in listOfLogicielInit.keys()}
-# Calculer les codate
-quotasRestant = {f: MaxPlace[f] - get_total_enrolled(f) for f in listOfLogicielInit.keys()}
+# def send_to_drive(file_bytes, name_on_server):
+#     try:
+#         _, _, gdrv = connect_to_server()
+#         if gdrv is None:
+#             raise Exception("Impossible de se connecter à Google Drive.")
+
+#         try:
+#             file_metadata = {
+#                 "name": name_on_server,
+#                 "parents": [CONFIG["driveFolderID"]]   # dossier PARTAGÉ
+#             }
+
+#             media = MediaIoBaseUpload(
+#                 io.BytesIO(file_bytes),
+#                 mimetype="application/pdf",
+#                 resumable=True
+#             )
+
+#             file = gdrv.files().create(
+#                 body=file_metadata,
+#                 media_body=media,
+#                 fields="id, name",
+#                 supportsAllDrives=True   # OBLIGATOIRE
+#             ).execute()
+
+#             return file
+
+#         except Exception as e:
+#             raise Exception(f"Erreur sauvegarde vers Drive : {e}")
+
+#     except Exception as e:
+#         raise Exception(f"Erreur connexion à Drive : {e}")
+# def send_to_drive(file_bytes, name_on_server):
+#     try:
+#         _, _, gdrv = connect_to_server()
+#         if gdrv is None:
+#             raise Exception("Impossible de se connecter à Google Drive.")
+
+#         folder_id = CONFIG.get("driveFolderID")
+        
+#         if not folder_id:
+#             raise Exception("driveFolderID non configuré dans CONFIG")
+        
+#         file_metadata = {
+#             "name": name_on_server,
+#             "parents": [folder_id]
+#         }
+
+#         media = MediaIoBaseUpload(
+#             io.BytesIO(file_bytes),
+#             mimetype="application/pdf",
+#             resumable=True
+#         )
+
+#         file = gdrv.files().create(
+#             body=file_metadata,
+#             media_body=media,
+#             fields="id, name",
+#             supportsAllDrives=True  # ← Gardez seulement celui-ci
+#         ).execute()
+
+#         return file
+
+#     except HttpError as e:
+#         raise Exception(f"Erreur Google Drive API : {e}")
+#     except Exception as e:
+#         raise Exception(f"Erreur lors de l'upload : {e}")
+    
+
+# def test_drive_access():
+#     _, _, gdrv = connect_to_server()
+#     results = gdrv.files().list(
+#         q=f"'{CONFIG['driveFolderID']}' in parents",
+#         fields="files(id, name)",
+#         supportsAllDrives=True
+#     ).execute()
+
+#     return results
+
+# print(test_drive_access())
+
+ActualEnrolledNumber = {
+    'python': 15,
+    'r': 15
+}
+
+# def test_folder_rights():
+#     _, _, gdrv = connect_to_server()
+
+#     folder = gdrv.files().get(
+#         fileId=CONFIG['driveFolderID'],
+#         fields="id, name, permissions",
+#         supportsAllDrives=True
+#     ).execute()
+
+#     return folder
+
+# print(test_folder_rights())
+
+# def test_drive_type():
+#     _, _, gdrv = connect_to_server()
+
+#     folder = gdrv.files().get(
+#         fileId=CONFIG['driveFolderID'],
+#         fields="id, name, driveId, parents",
+#         supportsAllDrives=True
+#     ).execute()
+
+#     return folder
+
+# print(test_drive_type())
 
 
-# update softward list to display
-listOfLogiciel = {}
-for i, j in listOfLogicielInit.items(): 
-    if quotasRestant[i]>0:
-        listOfLogiciel[i]= j
+
+quotas = {
+    'python': CONFIG['PythonMaxPlace'] - ActualEnrolledNumber['python'],
+    'r': CONFIG['RMaxPlace'] - ActualEnrolledNumber['r']
+}
+
 
 
 
@@ -392,26 +440,21 @@ paysList = getListOfCountryName()
 
 
 
-col1, col2, col3, col4, col5 = st.columns([1,2,1,2,1])
-with col2:
-    st.image("statics/ETC Slogan.png", width='stretch')
 
 
-with col4:
-    st.image("statics/Future Learders.jpg", width='stretch')
-    
 
-st.markdown("<h1 style='text-align: center;'>🎓 Formation Programme EcoDA</h1>", unsafe_allow_html=True)
+#st.title("🎓 Formation Gratuite ETC")
+st.markdown("<h1 style='text-align: center;'>🎓 Formation Gratuite ETC</h1>", unsafe_allow_html=True)
 
 st.markdown("""
 <p class="header-title">
-    Première Vague - Inscriptions jusqu'au 22 novembre
+    Première Vague - Inscriptions jusqu'au 15 novembre
 </p>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <p class="header-title">
-    Parrainé par <a href="https://sites.google.com/view/etc-site">ETC</a> - Programe EcoDA - Association Future Leaders
+    Parrainer par <a href="https://sites.google.com/view/etc-site">ETC</a> - Programe EcoDA - Association Future Leaders
 </p>
 """, unsafe_allow_html=True)
 
@@ -424,8 +467,8 @@ st.markdown("""
 st.markdown(
     """
         <div class="warning-box">
-            <p>1. Avoir au minimum BAC+3. Ne vous inquiétez pas, une autre session plus large se lancer </p>
-            <p>2. 📅 Calendrier : 7 séances les samedis 8h30-11h30 GMT. Disponibilité pouvant être adapter avec </p>
+            <p>1. Avoir au minimum BAC+3 </p>
+            <p>2. 📅 Calendrier : 7 séances les samedis 8h30-11h30 GMT</p>
         </div>
     """, unsafe_allow_html=True
 )
@@ -437,28 +480,35 @@ with col1:
     st.markdown(f"""
     <div class="quota-card">
         <h3 style="color: black;">🐍 Python</h3>
-        <p style="color: black;"><strong>Niveau 1</strong></p>
-        <h2 style="color: red;">{quotasRestant['python1']}/{MaxPlace['python1']}</h2>
+        <h2 style="color: red;">{quotas['python']}/{CONFIG['PythonMaxPlace']}</h2>
         <p style="color: black;">places disponibles</p>
     </div>
     """, unsafe_allow_html=True)
 
-    python_pct = (quotasRestant['python1']/MaxPlace['python1']) * 100
+    python_pct = (quotas['python']/CONFIG['PythonMaxPlace']) * 100
     st.progress(python_pct / 100)
 
 with col2:
     st.markdown(f"""
     <div class="quota-card">
         <h3 style="color: black;">📊 R</h3>
-        <p style="color: black;"><strong>Niveau 1</strong></p>
-        <h2 style="color: red;">{quotasRestant['r1']}/{MaxPlace['python1']}</h2>
+        <h2 style="color: red;">{quotas['r']}/{CONFIG['PythonMaxPlace']}</h2>
         <p style="color: black;">places disponibles</p>
     </div>
     """, unsafe_allow_html=True)
-    r_pct = (quotasRestant['r1'] / MaxPlace['r1']) * 100
+    r_pct = (quotas['r'] / CONFIG['RMaxPlace']) * 100
     st.progress(r_pct / 100)
 
 st.markdown("---")
+
+# update softward list
+listOfLogiciel = []
+if quotas['python']>0:
+    listOfLogiciel.append('Python')
+
+if quotas['r']>0:
+    listOfLogiciel.append('R')
+
 
 
 with st.form('formIncription'):
@@ -471,10 +521,13 @@ with st.form('formIncription'):
 
     formation = st.selectbox(
         "Formation souhaitée*",
-        listOfLogiciel.keys(),
+        listOfLogiciel,
         placeholder="Choisissez une formation. Attention aux accents. Ex: Économie",
         index=None,
-        format_func=lambda x: logicielDefinition[x]
+        format_func=lambda x: {
+            "Python": "Introduction à python",
+            "R": "Introduction à R et à l'analyse de données"
+        }[x]
     )
 
     st.markdown('<div class="section-title">👤 Informations personnelles</div>', unsafe_allow_html=True)
@@ -635,19 +688,11 @@ with st.form('formIncription'):
     )
     
 
-    submitted = st.form_submit_button("🚀 Envoyer mon inscription", width='stretch')
+    submitted = st.form_submit_button("🚀 Envoyer mon inscription", use_container_width=True)
 
     if submitted:
-        
-        pattern_email = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
-        pattern_tel = r"^\+[1-9]\d{1,3}(\s?\d{2,4}){2,5}$"
-
         if not all([formation, genre, nom, prenom, nationnalite, email, pays, ville, quartier, telephone, date_naissance, id_type, id_num, id_enddate, domaine, educ_niveau, diplome, etablissement]):
             st.markdown('<div class="error-box">❌ Veuillez remplir tous les champs obligatoires.</div>', unsafe_allow_html=True)
-        elif not re.match(pattern_email, email.strip()):
-            st.markdown('<div class="error-box">❌ Le format email est incorrect. Ex: abc@def.ghf</div>', unsafe_allow_html=True)
-        elif not re.match(pattern_tel, telephone.strip()):
-            st.markdown('<div class="error-box">❌ Numéro invalide. Exemple : +228 90 12 34 56</div>', unsafe_allow_html=True)
         elif not diplome_pdf or not piece_identite_pdf:
             st.markdown('<div class="error-box">❌ Veuillez charger vos documents justificatifs.</div>', unsafe_allow_html=True)
         elif (diplome_pdf.name[-4:].lower() != ".pdf") or (piece_identite_pdf.name[-4:].lower() != ".pdf"):
@@ -659,69 +704,78 @@ with st.form('formIncription'):
         else:
             data = {
                 #"formation": formation,
-                "ID": f"{formation}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                "ID": f"{formation[0]}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
                 "date_submitted": f'{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}',
                 "genre": genre,
-                "nom": nom.strip(),
-                "prenom": prenom.strip(),
+                "nom": nom,
+                "prenom": prenom,
                 "nationnalite": nationnalite,
-                "email": email.strip(),
+                "email": email,
                 "pays": pays,
-                "ville": ville.strip(),
-                "quartier": quartier.strip(),
-                "telephone": telephone.strip(),
+                "ville": ville,
+                "quartier": quartier,
+                "telephone": telephone,
                 "date_naissance": f'{date_naissance}',
                 "id_type": id_type,
-                "id_num": id_num.strip(),
+                "id_num": id_num,
                 "id_enddate": f'{id_enddate}',
                 "domaine": domaine,
                 "educ_niveau": educ_niveau,
-                "diplome": diplome.strip(),
-                "etablissement": etablissement.strip()
+                "diplome": diplome,
+                "etablissement": etablissement
             }
 
-            # Envoi du diplome à dropbox
-            send_to_dropbox(diplome_pdf, dest_files_name=f"{data.get('ID', '')}_Diplome.pdf")
-            send_to_dropbox(piece_identite_pdf, dest_files_name=f"{data.get('ID', '')}_IDProof.pdf")
+            # Envoi du diplome
+            send_to_dropbox(diplome_pdf, dest_files_name=f"Diplome_{data.get('ID', '')}.pdf")
+            send_to_dropbox(piece_identite_pdf, dest_files_name=f"IDProof_{data.get('ID', '')}.pdf")
+            # send_to_drive(file_bytes= diplome_pdf.read(), name_on_server=f"Diplpome_{data.get('ID', '')}")
+            # send_to_drive(file_bytes= piece_identite_pdf.read(), name_on_server=f"IDProof_{data.get('ID', '')}")
 
 
             send_to_sheet(data, shtname=formation)
 
-            titres = {'M': "Monsieur ", 'F': "Madame "}
-            msg = EmailMessage()
-            msg['From'] = smtp_user
-            msg['To'] = email.strip()
-            msg["Subject"] = "Programme EcoDA Vague 1 Gratuit"
-            msg.set_content(f"""
-            Bonjour {titres.get(genre, '')}{prenom.strip()} {nom.strip()},
-            
-            Votre candidature a bien été reçu.
-
-            Notre a bien recu les fichiers et reviendra vers vous prochainement.
-            Si vous n'etes pas encore dans la communauté ETC, nous vous invitons à la rejoindre sur WhatsApp afin de rester informé(e) des prochaines activités et formations :
-
-            👉 [https://chat.whatsapp.com/KR0tQBivH8u4hwgRWb61pw]
-
-
-
-            Excellent Training Center
-            L'excellence au service du développement
-
-            Formation | Analyse de données | Conseil économique
-            🌐 https://sites.google.com/view/etc-site
-            📩 contact.training.etc@gmail.com
-            """)
-
-            with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
-                smtp.starttls()
-                smtp.login(smtp_user, smtp_pass)
-                smtp.send_message(msg)
 
             st.markdown(
                 """
-                <div class="success-box"> ✅ Candidature envoyé. Surveillez vos mails (SPAM) et vos messages whatsapp.</div>
+                <div class="success-box"> ✅ Candidature envoyé. Surveillez vous mail. Et vous message whatsapp.</div>
                 """, unsafe_allow_html=True
             )
+
+            # inscription = {
+            #     "formation": None,
+            #     "genre": None,
+            #     "nom": None,
+            #     "prenom": None,
+            #     "email": None,
+            #     "telephone": None,
+            #     "date_naissance": None,
+            #     "id_type": None,
+            #     "id_num": None,
+            #     "id_enddate": None,
+            #     "domaine": None,
+            #     "educ_niveau": None,
+            #     "diplome": None,
+            #     "etablissement": None
+            # }
+
+            # inscription_schema = {
+            #     "formation": "Module ou formation choisie",
+            #     "genre": "Homme, Femme, Autre",
+            #     "nom": "Nom de famille",
+            #     "prenom": "Prénom",
+            #     "email": "Adresse email",
+            #     "telephone": "Numéro de téléphone (WhatsApp si possible)",
+            #     "date_naissance": "Date de naissance (AAAA-MM-JJ)",
+            #     "id_type": "Type de pièce d'identité (CNI, Passeport, Carte Étudiant...)",
+            #     "id_num": "Numéro de la pièce d'identité",
+            #     "id_enddate": "Date d’expiration de la pièce d'identité",
+            #     "domaine": "Domaine d’activité ou secteur professionnel",
+            #     "educ_niveau": "Niveau d’éducation (BAC, BAC+2, Licence, Master... )",
+            #     "diplome": "Dernier diplôme obtenu",
+            #     "etablissement": "Établissement ayant délivré le diplôme"
+            # }
+
+            
 
 
 
@@ -732,6 +786,6 @@ st.markdown("""
     <p><strong>📅 Calendrier :</strong> 7 séances les samedis 8h30-11h30 GMT</p>
     <p><strong>📞 Contact :</strong> Pour toute question, <a href="mailto:contact.training.etc@gmail.com
 ">contactez-nous</a></p>
-    <p style="margin-top: 1rem; opacity: 0.8;">© 2025 <a href="https://sites.google.com/view/etc-site">ETC</a> Programme EcoDA - Tous droits réservés</p>
+    <p style="margin-top: 1rem; opacity: 0.8;">© 2024 <a href="https://sites.google.com/view/etc-site">ETC</a> Formation - Tous droits réservés</p>
 </div>
 """, unsafe_allow_html=True)

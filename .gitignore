@@ -1,0 +1,42 @@
+# --- Secrets & tokens ---
+secret.json
+secrets/
+*.key
+*.pem
+*.crt
+
+# --- Environnements Streamlit & Python ---
+.env
+*.env
+*/.env
+
+# --- Clés / credentials ---
+credentials/
+client_secret.json
+service_account.json
+
+# --- Dossiers internes ---
+__pycache__/
+*.pyc
+.cache/
+.tmp/
+logs/
+
+# --- Fichiers Python à ignorer ---
+script_sensible.py
+test_local.py
+
+# --- Data ---
+data/
+*.csv
+*.xlsx
+
+# --- Streamlit ---
+.streamlit/secrets.toml
+
+# --- VS Code ---
+.vscode/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
