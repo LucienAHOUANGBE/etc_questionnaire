@@ -29,20 +29,20 @@ st.set_page_config(
 
 
 CONFIG = {
-    'python1': 30,
+    'PYTHON1': 30,
     'RMaxPlace': 30,
     "spreadSheetID": st.secrets.get("SPREADSHEET_ID"),
     "driveFolderID": st.secrets.get("DRIVE_FOLDER_ID")
 }
 
 listOfLogicielInit = {
-   'python1' :  'Python 1',
-   'r1' :  'R 1',
+   'PYTHON1' :  'Python 1',
+   'R1' :  'R 1',
 }
 
 logicielDefinition = {
-    "python1": "Python 1 : Introduction à python",
-    "r1": "R 1 : Introduction à R + Analyse de données"
+    'PYTHON1': "Python 1 : Introduction à python",
+    'R1': "R 1 : Introduction à R + Analyse de données"
 }
 
 MaxPlace = {f: 30 for f in listOfLogicielInit.keys()}
@@ -72,7 +72,7 @@ st.markdown("""
         text-align: center;
         font-size: 3em;
         margin-bottom: 0.5rem;
-        color: black;
+        /* color: black;*/
         text-shadow: 2px 2px 4px rgba(0,0,0,0.35);
     }
 
@@ -87,9 +87,7 @@ st.markdown("""
         backdrop-filter: blur(6px);
     }
 
-    p {
-        color: #2d2d2d;
-    }
+   
 
 
     /* ---------- CARDS ---------- */
@@ -102,6 +100,14 @@ st.markdown("""
         text-align: center;
         margin: 1rem 0;
     }
+            
+    /* Forcer la couleur du texte des labels des checkboxes */
+    label p {
+        color: black;
+    }
+    
+    
+           
 
 
     /* ---------- TITRES DE SECTION ---------- */
@@ -153,27 +159,28 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(111, 66, 193, 0.18);
     }
             
-    /* Tous les éléments <img> de l'application */
-    img {
-        width: 100% !important;     /* Toujours responsive */
-        height: auto !important;    /* Ratio conservé */
-        border-radius: 12px !important;
+    /* On centre la zone image et on limite la largeur max */
+    div[data-testid="stImage"] {
+        max-width: 900px;
+        width: 90%;
+        margin: 15px auto;
+    }
+
+    /* L'image s'adapte à la taille de la zone */
+    div[data-testid="stImage"] img {
+        width: 100% !important;
+        height: auto !important;
+        border-radius: 16px !important;
         object-fit: contain !important;
     }
 
-    /* Conteneur parent des images dans Streamlit */
-    [data-testid="stImage"] {
-        display: flex;
-        justify-content: center;    /* image centrée */
-        align-items: center;
-    }
-
-    /* Sur mobile : élargir encore plus */
+    /* Mobile : quasi plein écran */
     @media (max-width: 600px) {
-        img {
-            width: 98% !important;
+        div[data-testid="stImage"] {
+            width: 98%;
         }
     }
+
 
 </style>
 """, unsafe_allow_html=True)
@@ -277,7 +284,7 @@ def get_total_enrolled(formation):
         raise Exception("Impossible de récupérer le fichier Google Sheets.")
     try:
         # Si la feuille existe
-        wsht = gsht.worksheet(listOfLogicielInit.get(formation))
+        wsht = gsht.worksheet(formation)
         nb = len(wsht.get_all_values()) - 1
     except:
         pass
@@ -438,12 +445,12 @@ with col1:
     <div class="quota-card">
         <h3 style="color: black;">🐍 Python</h3>
         <p style="color: black;"><strong>Niveau 1</strong></p>
-        <h2 style="color: red;">{quotasRestant['python1']}/{MaxPlace['python1']}</h2>
+        <h2 style="color: red;">{quotasRestant['PYTHON1']}/{MaxPlace['PYTHON1']}</h2>
         <p style="color: black;">places disponibles</p>
     </div>
     """, unsafe_allow_html=True)
 
-    python_pct = (quotasRestant['python1']/MaxPlace['python1']) * 100
+    python_pct = (quotasRestant['PYTHON1']/MaxPlace['PYTHON1']) * 100
     st.progress(python_pct / 100)
 
 with col2:
@@ -451,11 +458,11 @@ with col2:
     <div class="quota-card">
         <h3 style="color: black;">📊 R</h3>
         <p style="color: black;"><strong>Niveau 1</strong></p>
-        <h2 style="color: red;">{quotasRestant['r1']}/{MaxPlace['python1']}</h2>
+        <h2 style="color: red;">{quotasRestant['R1']}/{MaxPlace['PYTHON1']}</h2>
         <p style="color: black;">places disponibles</p>
     </div>
     """, unsafe_allow_html=True)
-    r_pct = (quotasRestant['r1'] / MaxPlace['r1']) * 100
+    r_pct = (quotasRestant['R1'] / MaxPlace['R1']) * 100
     st.progress(r_pct / 100)
 
 st.markdown("---")
@@ -697,7 +704,7 @@ with st.form('formIncription'):
             
             Votre candidature a bien été reçu.
 
-            Notre a bien recu les fichiers et reviendra vers vous prochainement.
+            Notre équipe a bien recu les fichiers et reviendra vers vous prochainement.
             Si vous n'etes pas encore dans la communauté ETC, nous vous invitons à la rejoindre sur WhatsApp afin de rester informé(e) des prochaines activités et formations :
 
             👉 [https://chat.whatsapp.com/KR0tQBivH8u4hwgRWb61pw]
@@ -728,7 +735,7 @@ with st.form('formIncription'):
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; color: white; padding: 2rem;">
+<div style="text-align: center; padding: 2rem;">
     <p><strong>📅 Calendrier :</strong> 7 séances les samedis 8h30-11h30 GMT</p>
     <p><strong>📞 Contact :</strong> Pour toute question, <a href="mailto:contact.training.etc@gmail.com
 ">contactez-nous</a></p>
