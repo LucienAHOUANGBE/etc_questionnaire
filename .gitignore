@@ -10,6 +10,9 @@ secrets/
 *.env
 */.env
 
+# Les archives
+_archive/
+
 # --- Clés / credentials ---
 credentials/
 client_secret.json

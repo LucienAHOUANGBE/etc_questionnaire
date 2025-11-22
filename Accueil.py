@@ -2,17 +2,42 @@
 @auteur: Vignawou Lucien AHOUANGBE
 @affiliation: Excellent Treaning Center (ETC)
 @date: Saturday 15 Nov 2025 19:49
+@update: 
+    - 22/11/2025
+
 """
 
 import streamlit as st
 from google.oauth2.service_account import Credentials
 import gspread
-from datetime import datetime
+from datetime import datetime, timezone, date
 import dropbox
 import smtplib
 from email.message import EmailMessage
 import re
+import phonenumbers
+import time
 
+# l'initialisation
+
+
+
+MAINTENANCE_MODE = st.secrets.get("MAINTENANCE_MODE", False)
+
+if MAINTENANCE_MODE:
+    st.error("🚧 Site en maintenance. Réessayez plus tard.")
+    st.stop()
+
+
+# les controles
+
+datelimit = datetime(2025, 11, 26, 23, 59, 0,  tzinfo = timezone.utc)
+
+if datetime.now(timezone.utc) > datelimit:
+    st.error(f"""
+            La date limite pour ce questionnaire est {datelimit.strftime("%Y-%m-%d %H:%M:%S")}. Le questionnaire n'est plus d'actualité. Veuillez attendre la prochaine session de formation.
+            """)
+    st.stop()
 
 
 
@@ -28,6 +53,7 @@ st.set_page_config(
 
 
 
+
 CONFIG = {
     'PYTHON1': 30,
     'RMaxPlace': 30,
@@ -35,16 +61,25 @@ CONFIG = {
     "driveFolderID": st.secrets.get("DRIVE_FOLDER_ID")
 }
 
+
 listOfLogicielInit = {
    'PYTHON1' :  'Python 1',
    'R1' :  'R 1',
+   'LATEX1': "Latex 1"
 }
+
 
 logicielDefinition = {
     'PYTHON1': "Python 1 : Introduction à python",
-    'R1': "R 1 : Introduction à R + Analyse de données"
+    'R1': "R 1 : Introduction à R + Analyse de données",
+    'LATEX1': "Latex 1 : Introduction au Latex et au Beamer"
 }
 
+
+yes_no = {
+    'O': 'Oui',
+    'N' : 'Non'
+}
 MaxPlace = {f: 30 for f in listOfLogicielInit.keys()}
 
 smtp_user = st.secrets.Mails['SMTP_USER']
@@ -191,7 +226,7 @@ st.markdown("""
 # Google sheets
 
 
-st.cache_resource()
+@st.cache_resource
 def connect_to_server():
 
     SCOPES = [
@@ -213,28 +248,25 @@ def connect_to_server():
     "universe_domain": st.secrets["gcp_service_account"]["universe_domain"]
     }
 
-
-
     creds = Credentials.from_service_account_info(
         Credentials_dict,
         scopes=SCOPES
     )
 
-    
     try:
         client = gspread.authorize(creds)
         sht = client.open_by_key(CONFIG["spreadSheetID"])
         #drv = build(serviceName='drive', version='v3', credentials=creds)
         dbx = dropbox.Dropbox(st.secrets['dropbox']['token'])
         return client, sht, dbx
-    
-    except:
-        st.error(
-            "Connexion serveur impossible !", icon="❌"
-        )
+    except gspread.exceptions.APIError as e:
+        st.error(f"Erreur API Google : {e}")
         return None, None, None
+    except Exception as e:
+        st.error(f"Erreur connexion : {e}")
+        st.stop()
 
-
+        return None, None, None
 
 
 
@@ -289,10 +321,53 @@ def get_total_enrolled(formation):
     except:
         pass
     return nb
+
+
+def check_all_duplicates(email, telephone, data):
+    """Vérifie email ET téléphone sur TOUTES les formations en une seule connexion"""
+    _, gsht, _ = connect_to_server()
+    
+    if gsht is None:
+        return None, None
+    
+    try:
+        email_col = list(data.keys()).index('email') + 1
+        tel_col = list(data.keys()).index('telephone') + 1
+    except ValueError:
+        return None, None
+    
+    for formation in listOfLogicielInit.keys():
+        try:
+            wsht = gsht.worksheet(formation)
+            
+            # Vérifier email
+            emails = [e.lower().strip() for e in wsht.col_values(email_col)[1:]]
+            if email.strip().lower() in emails:
+                return formation, 'email'
+            
+            # Vérifier téléphone
+            telephones = [t.strip() for t in wsht.col_values(tel_col)[1:]]
+            if telephone.strip() in telephones:
+                return formation, 'telephone'
+        
+        except gspread.exceptions.WorksheetNotFound:
+            continue
+    
+    return None, None
+
+
+
+
     
 # ActualEnrolledNumber = {f: get_total_enrole(f) for f in listOfLogicielInit.keys()}
 # Calculer les codate
-quotasRestant = {f: MaxPlace[f] - get_total_enrolled(f) for f in listOfLogicielInit.keys()}
+@st.cache_data(ttl=30)  # Cache 60 secondes
+def get_quotas_restant():
+    return {f: MaxPlace[f] - get_total_enrolled(f) 
+            for f in listOfLogicielInit.keys()}
+
+quotasRestant = get_quotas_restant()
+
 
 
 # update softward list to display
@@ -301,10 +376,16 @@ for i, j in listOfLogicielInit.items():
     if quotasRestant[i]>0:
         listOfLogiciel[i]= j
 
+def validate_phone(phone):
+    try:
+        parsed = phonenumbers.parse(phone, None)
+        return phonenumbers.is_valid_number(parsed)
+    except:
+        return False
+    
 
 
-
-st.cache_data()
+@st.cache_data
 def getListOfDomaine():
     return [
         "Agronomie",
@@ -328,14 +409,14 @@ def getListOfDomaine():
         "Droit international",
         "Droit privé (civil, commercial, pénal, etc.)",
         "Droit public (administratif, constitutionnel, fiscal…)",
-        "Économie",
-        "Éducation et sciences de l’éducation",
-        "Électronique et électrotechnique",
-        "Énergies renouvelables et environnement",
+        "Economie",
+        "Education et sciences de l’éducation",
+        "Electronique et électrotechnique",
+        "Energies renouvelables et environnement",
         "Enseignement (primaire, secondaire, supérieur)",
         "Entrepreneuriat et innovation",
-        "Études en gouvernance et institutions publiques",
-        "Études sur le genre et inclusion sociale",
+        "Etudes en gouvernance et institutions publiques",
+        "Etudes sur le genre et inclusion sociale",
         "Foresterie",
         "Formation professionnelle et technique",
         "Géographie",
@@ -375,10 +456,10 @@ def getListOfDomaine():
         "Technologies de l’information et de la communication (TIC)",
         "Autre"]
 
-domaineList = getListOfDomaine()
 
 
-st.cache_resource()
+
+@st.cache_data
 def getListOfCountryName():
     import pycountry
     from babel import Locale
@@ -410,17 +491,103 @@ with col4:
 
 st.markdown("<h1 style='text-align: center;'>🎓 Formation Programme EcoDA</h1>", unsafe_allow_html=True)
 
-st.markdown("""
+# ce qu'il faut faire si toutes les formations sont rempit
+
+
+
+# Vérifier disponibilité
+formations_disponibles = {k: v for k, v in listOfLogiciel.items() if quotasRestant[k] > 0}
+
+
+if not formations_disponibles:
+    total_places = sum(MaxPlace.values())
+    
+    st.markdown("---")
+    # Version avec colonnes Streamlit (plus simple)
+    st.error("### 🚫 Toutes les formations sont complètes")
+    
+    total_places = sum(MaxPlace.values())
+
+    st.markdown(f"""
+        <style>
+        @keyframes fadeIn {{
+            from {{ opacity: 0; transform: translateY(20px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        .closing-message {{
+            animation: fadeIn 1s ease-out;
+        }}
+        </style>
+        
+        <div class="closing-message" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 4rem 2rem; border-radius: 25px; 
+                    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); margin: 1em;">
+            <h1 style="font-size: 4em; margin: 0;">🎓</h1>
+            <h1 style="margin: 1rem 0;">Vague 1 : Complète !</h1>
+            <p style="font-size: 1.3em; margin: 2rem 0; line-height: 1.6;">
+                Merci pour votre intérêt ! Les <strong>{total_places} places</strong> ont trouvé preneurs.
+            </p>
+            
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.write()
+    
+    st.write()
+    
+    st.info("""
+    ### 📅 Prochainement
+    
+    Une nouvelle vague de formations sera bientôt annoncée.
+    Restez connecté(e) pour ne pas manquer l'ouverture des inscriptions !
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.link_button(
+            "💬 Rejoindre WhatsApp",
+            "https://chat.whatsapp.com/KR0tQBivH8u4hwgRWb61pw",
+            use_container_width=True
+        )
+    
+    with col2:
+        st.link_button(
+            "✉️ Nous contacter",
+            "mailto:contact.training.etc@gmail.com",
+            use_container_width=True
+        )
+    
+    st.markdown("---")
+    
+    with st.expander("🔔 Comment être informé(e) de la prochaine session ?"):
+        st.write("""
+        1. Rejoignez notre communauté WhatsApp (lien ci-dessus)
+        2. Suivez notre site web : https://sites.google.com/view/etc-site
+        3. Envoyez-nous un email pour être sur notre liste de diffusion
+        """)
+    
+    st.stop()
+
+
+
+##### Debut de la page de formation
+st.markdown(f"""
 <p class="header-title">
-    Première Vague - Inscriptions jusqu'au 22 novembre
+    Première Vague - Inscriptions jusqu'au {datelimit.strftime("%Y-%m-%d %H:%M:%S")}
 </p>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <p class="header-title">
-    Parrainé par <a href="https://sites.google.com/view/etc-site">ETC</a> - Programe EcoDA - Association Future Leaders
+    Parrainé par <a href="https://sites.google.com/view/etc-site">ETC</a> - Programme EcoDA - Association Future Leaders
 </p>
 """, unsafe_allow_html=True)
+
+
+
+st.markdown("---")
+
 
 st.markdown("""
         <div class="section-title">
@@ -428,18 +595,47 @@ st.markdown("""
         </div>
     """, unsafe_allow_html=True)
 
+
+
+# Si des places sont disponibles
+places_totales_restantes = sum(quotasRestant.values())
+
+if places_totales_restantes <= 10:
+    st.warning(f"⚠️ **ATTENTION :** Plus que {places_totales_restantes} place(s) disponible(s) au total !")
+else:
+    st.success(f"✅ {places_totales_restantes} place(s) encore disponible(s) !")
+
+# Afficher quelles formations sont complètes
+formations_completes = [logicielDefinition[k] for k in listOfLogicielInit.keys() if quotasRestant[k] <= 0]
+if formations_completes:
+    st.markdown(f"""
+        <div class="warning-box">
+            ⚠️ <strong>Formations complètes :</strong> {', '.join(formations_completes)}
+        </div>
+    """, unsafe_allow_html=True)
+
+
+
 st.markdown(
     """
         <div class="warning-box">
-            <p>1. Avoir au minimum BAC+3. Ne vous inquiétez pas, une autre session plus large se lancer </p>
-            <p>2. 📅 Calendrier : 7 séances les samedis 8h30-11h30 GMT. Disponibilité pouvant être adapter avec </p>
+            <ol>
+                <li>Cette section est en francais.</li>
+                <li>Avoir au minimum BAC+2. Ne vous inquiétez pas, une autre session plus large sera lancée prochainement.</li>
+                <li>Vérifiiez votre disponibilité avant de vous lancer.</li>
+                <li>📅 Calendrier : 7 séances les samedis 8h30-11h30 GMT. Disponibilité pouvant être adapter en fonction de la disponibilité du formateur, mais les samedis seront privilégiés.</li>
+                <li>Les formations dureront 21h, sauf la formation Latex qui durera 15 heures</li>
+            </ol>       
         </div>
     """, unsafe_allow_html=True
 )
 
 
 
-col1, col2 = st.columns(2)
+
+
+# informations sur les place disponibles
+col1, col2, col3 = st.columns(3)
 with col1:
     st.markdown(f"""
     <div class="quota-card">
@@ -465,10 +661,30 @@ with col2:
     r_pct = (quotasRestant['R1'] / MaxPlace['R1']) * 100
     st.progress(r_pct / 100)
 
+with col3:
+    st.markdown(f"""
+    <div class="quota-card">
+        <h3 style="color: black;">📊 Latex</h3>
+        <p style="color: black;"><strong>Niveau 1</strong></p>
+        <h2 style="color: red;">{quotasRestant['LATEX1']}/{MaxPlace['LATEX1']}</h2>
+        <p style="color: black;">places disponibles</p>
+    </div>
+    """, unsafe_allow_html=True)
+    r_pct = (quotasRestant['LATEX1'] / MaxPlace['LATEX1']) * 100
+    st.progress(r_pct / 100)
+
 st.markdown("---")
 
-
+# Debut du formulaire
 with st.form('formIncription'):
+
+    st.markdown("""
+        <div class="warning-box">
+            ⚠️ <strong>Information :</strong> Les places affichées peuvent changer pendant que vous remplissez ce formulaire.
+            Nous vérifierons la disponibilité au moment de votre soumission.
+        </div>
+    """, unsafe_allow_html=True)
+     
     st.markdown("""
         <div class="section-title">
             📝 Choix de formation
@@ -537,37 +753,49 @@ with st.form('formIncription'):
 
     col1, col2 = st.columns(2)
     with col1:
-        telephone = st.text_input("Téléphone (Whatsapp)*", placeholder="+228 XX XX XX XX")
-    with col2:
-        date_naissance = st.date_input("Date de naissance *")
+        telephone = st.text_input("Téléphone (Whatsapp) *", placeholder="+228 XX XX XX XX")
 
-    st.markdown(
-        """
-            <div class="warning-box">
-                ⚠️ Veuillez fournir les informations sur une pièces d'identité en cours de validité.
-            </div>
-        """, unsafe_allow_html=True
-    )
-
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        id_type = st.selectbox(
-            "Type de pièce d'identité *",
-            ["CNI","Passeport", "Permis de conduire", "Autre"],
-            index=None,
-            placeholder="Selectionner un type"
-        )
 
     with col2:
-        id_num = st.text_input(
-            "N° pièce *",
-            placeholder="AB 123456"
+        date_naissance = st.date_input(
+            "Date de naissance *",
+            min_value= date(1970, 1, 1),
+            max_value=date.today(),
+            value=date(2000, 1, 1)
         )
 
-    with col3:
-        id_enddate = st.date_input("Date d'expiration *")
+    # st.markdown(
+    #     """
+    #         <div class="warning-box">
+    #             ⚠️ Veuillez fournir les informations sur une pièces d'identité en cours de validité.
+    #         </div>
+    #     """, unsafe_allow_html=True
+    # )
 
+
+    # col1, col2, col3 = st.columns(3)
+    # with col1:
+    #     id_type = st.selectbox(
+    #         "Type de pièce d'identité *",
+    #         ["CNI","Passeport", "Permis de conduire", "Autre"],
+    #         index=None,
+    #         placeholder="Selectionner un type"
+    #     )
+
+    id_type = "NA"
+
+    # with col2:
+    #     id_num = st.text_input(
+    #         "N° pièce *",
+    #         placeholder="AB 123456"
+    #     )
+
+    id_num = "NA"
+
+    # with col3:
+    #     id_enddate = st.date_input("Date d'expiration *")
+
+    id_enddate = "NA"
     
     st.markdown("""
         <div class="section-title">
@@ -575,70 +803,126 @@ with st.form('formIncription'):
         </div>
     """, unsafe_allow_html=True)
 
-
-    domaine = st.selectbox(
-        "Votre domaine *",
-        domaineList,
+    current_active_etudiant_educ = st.radio(
+        "Etes-vous toujours étudiant ? *",
+        yes_no.keys(),
+        captions = yes_no.values(),
+        horizontal=True,
         index=None,
-        placeholder="Selectionner un domaine"
     )
 
+    domaine_educ = st.selectbox(
+        "Votre domaine *",
+        getListOfDomaine(),
+        index=None,
+        placeholder="Ex. Economie"
+    )
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        educ_niveau = st.selectbox(
+        niveau_educ = st.selectbox(
             "Niveau d'étude *",
-            [f"Bac +{i}" for i in range(3, 9)],
+            [f"Bac +{i}" for i in range(2, 9)],
             placeholder="Plus haut niveau",
             index=None
         )
 
     with col2:
-        diplome = st.text_input(
+        diplome_educ = st.text_input(
             "Dernier diplôme obtenu *",
             placeholder="Ex: Licence en informatique"
         )
 
     with col3:
-        etablissement = st.text_input(
+        etablissement_educ = st.text_input(
             "Établissement *",
             placeholder="Ex: Université de lomé"
         )
 
-
+    specialite_educ = st.text_input(
+        "Quelle est votre spécialité exacte ou votre filière *",
+        placeholder='Ex. Microéconomie comportementale'
+    )
 
     st.markdown("""
         <div class="section-title">
-            📄 Documents justificatifs
+            💼 Expérience professionnelles
         </div>
     """, unsafe_allow_html=True)
 
+    activite_pro = st.radio(
+        "Exercez vous une activité professionnelle ? *",
+        yes_no.keys(),
+        captions = yes_no.values(),
+        horizontal=True,
+        index=None,
+    )
+
+    domaine_pro = st.selectbox(
+        "Quel est votre domaine d'activités principal ? *",
+        getListOfDomaine(),
+        index=None,
+        placeholder="Ex. Economie"
+    )
+
+    specialite_pro = st.text_input(
+        "Quelle est votre spécialité ou votre rôle principal dans ce domaine ? *",
+        placeholder="Ex: Consultant en analyse de données"
+    )
+
+    current_active_pro = st.radio(
+        "Travaillez-vous actuellement dans ce domaine ? *",
+        yes_no.keys(),
+        captions = yes_no.values(),
+        horizontal=True,
+        index=None,
+    )
+
+    experience_year = st.number_input(
+        "Depuis combien de temps travaillez-vous dans ce domaine (en année) ? *",
+        value = 0.0,
+        min_value = 0.0,
+        max_value = 50.0,
+        step = 0.5,
+        format="%.2f"
+    )
+    
     st.markdown("""
-        <div class="warning-box">
-            <p>⚠️ <strong>Important :</strong> Les fichiers doivent être au format PDF et ne pas dépasser 10 MB chacun.</p>
-            <p>Pour des raisons de sécurités, vos documents fournis seront détruits une fois les informations validées.</p>
+        <div class="section-title">
+            🎯 Motivation et Objectifs
         </div>
     """, unsafe_allow_html=True)
 
-    diplome_pdf = st.file_uploader("Copie du diplôme (PDF) *", type=['pdf'], key="diplome")
-    piece_identite_pdf = st.file_uploader("Pièce d'identité (PDF) *", type=['pdf'], key="piece_identite")
+    formation_pourquoi = st.text_area(
+        "Pourquoi souhaitez-vous suivre cette formation ? *",
+        max_chars=1000,
+        placeholder="Minimum 50 caractères."
+    )
 
+    formation_utilite = st.text_area(
+        "Comment pensez-vous utiliser les compétences acquises après cette formation ? *",
+        max_chars=1000,
+        placeholder="Minimum 50 caractères."
+    )
+
+    formation_comment = st.text_area(
+        "Commentaire ?",
+        max_chars=1000,
+        placeholder="Minimum 50 caractères."
+    )
+ 
     st.markdown("""
         <div class="section-title">
             ✅ Engagement et conditions
         </div>
     """, unsafe_allow_html=True)
-
-    accepte_conditions = st.checkbox(
-        "J'accepte que mes documents soient vérifiés et je comprends que toute fausse déclaration entraînera une exclusion définitive. *"
-    )
     
     confirme_presence = st.checkbox(
         "Je m'engage à être présent(e) à TOUTES les séances. Les absences non justifiées entraînent une exclusion automatique. *"
     )
     
     confirme_connexion = st.checkbox(
-        "Je confirme disposer d'une bonne connexion Internet pour suivre les sessions en ligne. *"
+        "Je confirme disposer d'ordinateur et d'une bonne connexion Internet pour suivre les sessions en ligne. *"
     )
     
 
@@ -647,27 +931,54 @@ with st.form('formIncription'):
     if submitted:
         
         pattern_email = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
-        pattern_tel = r"^\+[1-9]\d{1,3}(\s?\d{2,4}){2,5}$"
 
-        if not all([formation, genre, nom, prenom, nationnalite, email, pays, ville, quartier, telephone, date_naissance, id_type, id_num, id_enddate, domaine, educ_niveau, diplome, etablissement]):
+        
+
+        # Champs obligatoires de base
+        if not all([formation, genre, nom, prenom, nationnalite, email, pays, ville, 
+                    quartier, telephone, date_naissance, domaine_educ, niveau_educ, 
+                    diplome_educ, etablissement_educ, specialite_educ, activite_pro, 
+                    formation_pourquoi, formation_utilite]):
             st.markdown('<div class="error-box">❌ Veuillez remplir tous les champs obligatoires.</div>', unsafe_allow_html=True)
+        
+        # Validation email
         elif not re.match(pattern_email, email.strip()):
             st.markdown('<div class="error-box">❌ Le format email est incorrect. Ex: abc@def.ghf</div>', unsafe_allow_html=True)
-        elif not re.match(pattern_tel, telephone.strip()):
+        
+        # Validation téléphone
+        elif not validate_phone(telephone):
             st.markdown('<div class="error-box">❌ Numéro invalide. Exemple : +228 90 12 34 56</div>', unsafe_allow_html=True)
-        elif not diplome_pdf or not piece_identite_pdf:
-            st.markdown('<div class="error-box">❌ Veuillez charger vos documents justificatifs.</div>', unsafe_allow_html=True)
-        elif (diplome_pdf.name[-4:].lower() != ".pdf") or (piece_identite_pdf.name[-4:].lower() != ".pdf"):
-            st.markdown('<div class="error-box">❌ Veuillez charger vos documents justificatifs en <strong>PDF</strong>.</div>', unsafe_allow_html=True)
-        elif diplome_pdf.size > 10 * 1024 * 1024 or piece_identite_pdf.size > 10 * 1024 * 1024:
-            st.markdown('<div class="error-box">❌ Les fichiers ne doivent pas dépasser 10 MB chacun.</div>', unsafe_allow_html=True)
-        elif not all([accepte_conditions, confirme_presence, confirme_connexion]):
+        
+        # Validation activité professionnelle
+        elif activite_pro == 'O' and not all([domaine_pro, specialite_pro, current_active_pro]):
+            st.markdown('<div class="error-box">❌ Veuillez remplir tous les champs obligatoires de vos activités professionnelles.</div>', unsafe_allow_html=True)
+        
+        # Validation expérience
+        elif activite_pro == 'O' and current_active_pro == 'O' and experience_year <= 0:
+            st.markdown('<div class="error-box">❌ Veuillez indiquer votre expérience professionnelle (minimum 0.5 an).</div>', unsafe_allow_html=True)
+        
+        # Validation longueur motivation
+        elif len(formation_pourquoi.strip()) < 50:
+            st.markdown('<div class="error-box">❌ Veuillez détailler votre motivation (minimum 50 caractères).</div>', unsafe_allow_html=True)
+        
+        elif len(formation_utilite.strip()) < 50:
+            st.markdown('<div class="error-box">❌ Veuillez détailler comment vous utiliserez la formation (minimum 50 caractères).</div>', unsafe_allow_html=True)
+        
+        # Validation conditions
+        elif not all([confirme_presence, confirme_connexion]):
             st.markdown('<div class="error-box">❌ Veuillez accepter toutes les conditions obligatoires.</div>', unsafe_allow_html=True)
+        
+        # Vérification places disponibles
+        elif get_total_enrolled(formation) >= MaxPlace[formation]:
+            st.error("❌ Il n'y a plus de places disponibles pour cette formation.")
+            time.sleep(4)
+            st.rerun()
         else:
+
+            # Préparer les données
             data = {
-                #"formation": formation,
-                "ID": f"{formation}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "date_submitted": f'{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}',
+                "ID": f"{formation}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+                "date_submitted": f'{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}',
                 "genre": genre,
                 "nom": nom.strip(),
                 "prenom": prenom.strip(),
@@ -681,55 +992,86 @@ with st.form('formIncription'):
                 "id_type": id_type,
                 "id_num": id_num.strip(),
                 "id_enddate": f'{id_enddate}',
-                "domaine": domaine,
-                "educ_niveau": educ_niveau,
-                "diplome": diplome.strip(),
-                "etablissement": etablissement.strip()
+                "current_active_etudiant_educ": current_active_etudiant_educ,
+                "domaine_educ": domaine_educ,
+                "niveau_educ": niveau_educ,
+                "diplome_educ": diplome_educ.strip(),
+                "etablissement_educ": etablissement_educ.strip(),
+                "specialite_educ": specialite_educ.strip(),
+                "activite_pro": activite_pro,
+                "domaine_pro": domaine_pro if activite_pro == 'O' else "N/A",
+                "specialite_pro": specialite_pro.strip() if activite_pro == 'O' else "N/A",
+                "current_active_pro": current_active_pro if activite_pro == 'O' else "N/A",
+                "experience_year": experience_year if activite_pro == 'O' else 0,
+                "formation_pourquoi": formation_pourquoi.strip(),
+                "formation_utilite": formation_utilite.strip(),
+                "formation_comment": formation_comment.strip()
             }
 
-            # Envoi du diplome à dropbox
-            send_to_dropbox(diplome_pdf, dest_files_name=f"{data.get('ID', '')}_Diplome.pdf")
-            send_to_dropbox(piece_identite_pdf, dest_files_name=f"{data.get('ID', '')}_IDProof.pdf")
+           
+            # Utilisation
+            duplicate_formation, duplicate_field = check_all_duplicates(email, telephone, data)
 
+            if duplicate_formation:
+                st.markdown(
+                    f'<div class="error-box">❌ Ce {duplicate_field} est déjà inscrit à <strong>{logicielDefinition[duplicate_formation]}</strong>.</div>',
+                    unsafe_allow_html=True
+                )
+                st.stop()
 
-            send_to_sheet(data, shtname=formation)
-
-            titres = {'M': "Monsieur ", 'F': "Madame "}
-            msg = EmailMessage()
-            msg['From'] = smtp_user
-            msg['To'] = email.strip()
-            msg["Subject"] = "Programme EcoDA Vague 1 Gratuit"
-            msg.set_content(f"""
-            Bonjour {titres.get(genre, '')}{prenom.strip()} {nom.strip()},
+            # ✅ VÉRIFICATION FINALE JUSTE AVANT INSERTION
+            places_actuelles = get_total_enrolled(formation)
+            if places_actuelles >= MaxPlace[formation]:
+                st.error("❌ Formation complète ! Un autre utilisateur a pris la dernière place pendant votre inscription.")
+                time.sleep(3)
+                st.rerun()
+                st.stop()
             
-            Votre candidature a bien été reçu.
+            try:
+                send_to_sheet(data, shtname=formation)
 
-            Notre équipe a bien recu les fichiers et reviendra vers vous prochainement.
-            Si vous n'etes pas encore dans la communauté ETC, nous vous invitons à la rejoindre sur WhatsApp afin de rester informé(e) des prochaines activités et formations :
+                titres = {'M': "Monsieur ", 'F': "Madame "}
+                msg = EmailMessage()
+                msg['From'] = smtp_user
+                msg['To'] = email.strip()
+                msg["Subject"] = "Programme EcoDA Vague 1 Gratuit"
+                msg.set_content(f"""
+Bonjour {titres.get(genre, '')}{prenom.strip()} {nom.strip()},
 
-            👉 [https://chat.whatsapp.com/KR0tQBivH8u4hwgRWb61pw]
+Votre candidature a bien été reçue.
+Votre ID : {data.get('ID', "Non Connu")}
+
+Rejoignez notre communauté WhatsApp :
+https://chat.whatsapp.com/KR0tQBivH8u4hwgRWb61pw
+
+Cordialement,
+Excellent Training Center
+L'excellence au service du développement
+
+Formation | Analyse de données | Conseil économique
+🌐 https://sites.google.com/view/etc-site
+📩 contact.training.etc@gmail.com
+                """)
+                
+                with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+                    smtp.starttls()
+                    smtp.login(smtp_user, smtp_pass)
+                    smtp.send_message(msg)
+
+                st.markdown("""
+                    <div class="success-box">✅ Candidature envoyée. Surveillez vos mails (SPAM) et vos messages WhatsApp.</div>
+                """, unsafe_allow_html=True)
+
+                st.balloons()  # Animation de succès
+                st.success(f"✅ Inscription validée ! Bienvenu à bord {titres.get(genre, '')}{prenom.strip()} {nom.strip()} !")
+                time.sleep(10)
+                st.rerun()  # Recharger pour vider le formulaire
 
 
+            except Exception as e:
+                st.error(f"Problème d'envoi de vos données. Vérifiez votre connexion. Erreur : {e}")
 
-            Excellent Training Center
-            L'excellence au service du développement
-
-            Formation | Analyse de données | Conseil économique
-            🌐 https://sites.google.com/view/etc-site
-            📩 contact.training.etc@gmail.com
-            """)
-
-            with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
-                smtp.starttls()
-                smtp.login(smtp_user, smtp_pass)
-                smtp.send_message(msg)
-
-            st.markdown(
-                """
-                <div class="success-box"> ✅ Candidature envoyé. Surveillez vos mails (SPAM) et vos messages whatsapp.</div>
-                """, unsafe_allow_html=True
-            )
-
+            
 
 
 # Footer
@@ -739,6 +1081,7 @@ st.markdown("""
     <p><strong>📅 Calendrier :</strong> 7 séances les samedis 8h30-11h30 GMT</p>
     <p><strong>📞 Contact :</strong> Pour toute question, <a href="mailto:contact.training.etc@gmail.com
 ">contactez-nous</a></p>
+    <p>Formation | Analyse de données | Conseil économique</p>
     <p style="margin-top: 1rem; opacity: 0.8;">© 2025 <a href="https://sites.google.com/view/etc-site">ETC</a> Programme EcoDA - Tous droits réservés</p>
 </div>
 """, unsafe_allow_html=True)
