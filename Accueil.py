@@ -375,7 +375,6 @@ def get_quotas_restant():
 
 quotasRestant = get_quotas_restant()
 
-print(quotasRestant)
 
 # update softward list to display
 listOfLogiciel = {}
@@ -867,6 +866,12 @@ with st.form('formIncription'):
         horizontal=True,
         index=None,
     )
+
+    st.markdown(
+        '<p style="color: black; font-size: smaller;">Les questions suivantes sont obligatoires si vous avez déjà exercé, ou exercez actuellement, une activité professionnelle.</p>',
+        unsafe_allow_html=True
+    )
+
 
     domaine_pro = st.selectbox(
         "Quel est votre domaine d'activités principal ? *",
