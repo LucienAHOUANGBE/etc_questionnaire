@@ -615,20 +615,23 @@ if formations_completes:
     """, unsafe_allow_html=True)
 
 
-
 st.markdown(
     """
-        <div class="warning-box">
-            <ol>
-                <li>Cette section est en francais.</li>
-                <li>Avoir au minimum BAC+2. Ne vous inquiétez pas, une autre session plus large sera lancée prochainement.</li>
-                <li>Vérifiiez votre disponibilité avant de vous lancer.</li>
-                <li>📅 Calendrier : 7 séances les samedis 8h30-11h30 GMT. Disponibilité pouvant être adapter en fonction de la disponibilité du formateur, mais les samedis seront privilégiés.</li>
-                <li>Les formations dureront 21h, sauf la formation Latex qui durera 15 heures</li>
-            </ol>       
-        </div>
-    """, unsafe_allow_html=True
+    <div class="warning-box">
+        <ol>
+            <li>Cette section est exclusivement en français.</li>
+            <li>Avoir au minimum un niveau Bac + 2. Ne vous inquiétez pas, une autre session plus large sera lancée prochainement.</li>
+            <li>📅 <strong>Calendrier</strong> : 7 séances, les samedis de 8h30 à 11h30 (GMT, heure officielle). 
+                Les horaires peuvent être adaptés en fonction de la disponibilité du formateur.</li>
+            <li>Veuillez vérifier votre disponibilité avant de vous inscrire. 
+                Les formations se dérouleront principalement les samedis matin, mais les horaires peuvent être ajustés si le formateur est indisponible.</li>
+            <li>La durée des formations est de 21 heures, sauf la formation LaTeX qui durera 15 heures.</li>
+        </ol>       
+    </div>
+    """,
+    unsafe_allow_html=True
 )
+
 
 
 
@@ -908,7 +911,7 @@ with st.form('formIncription'):
     formation_comment = st.text_area(
         "Commentaire ?",
         max_chars=1000,
-        placeholder="Minimum 50 caractères."
+        placeholder="Votre commentaire."
     )
  
     st.markdown("""
