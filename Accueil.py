@@ -363,12 +363,19 @@ def check_all_duplicates(email, telephone, data):
 # Calculer les codate
 @st.cache_data(ttl=30)  # Cache 60 secondes
 def get_quotas_restant():
-    return {f: MaxPlace[f] - get_total_enrolled(f) 
-            for f in listOfLogicielInit.keys()}
+    qr = {}
+    for f in listOfLogicielInit.keys():
+        qrf = MaxPlace[f]  - get_total_enrolled(f) 
+        if qrf < 0:
+            qr[f] = 0
+        else: 
+            qr[f] = qrf
+    
+    return qr
 
 quotasRestant = get_quotas_restant()
 
-
+print(quotasRestant)
 
 # update softward list to display
 listOfLogiciel = {}
